@@ -1,0 +1,15 @@
+model:
+  checkpoint: ./pretrained_models/pretrained_diffusion.pt
+
+sample:
+  seed: 0
+  num_steps: -1
+  num_samples: -1
+  pos_only: False
+  center_pos_mode: protein
+  inv_temp: 1
+  reverse_method: "SDE"
+  resample: 0
+  sample_num_atoms: fixed
+  num_atoms_to_sample: -1
+
