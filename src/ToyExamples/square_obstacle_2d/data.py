@@ -1,0 +1,384 @@
+"""Demonstration dataset for the square-obstacle toy.
+
+Each demo is the result of a batched Adam trajectory optimisation that
+goes from the fixed start to the fixed goal while avoiding the square.
+Both endpoints are pinned to ``env.start`` / ``env.goal`` at every iteration;
+only the interior waypoints are optimised against the loss
+
+    L(traj) =   w_obs * sum_t  relu(h_square(x_t))^2
+              + w_smooth * sum_t  || p_{t+1} - 2 p_t + p_{t-1} ||^2
+
+The diffusion model never sees the inverted-U; it only learns the
+distribution of trajectories that detour around the small square.
+
+Run as a script for a quick sanity check::
+
+    python -m src.ToyExamples.square_obstacle_2d.data --plot_samples 12
+"""
+from __future__ import annotations
+
+import argparse
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+from scipy.interpolate import interp1d
+from torch.utils.data import Dataset
+
+from .env import SquareObstacleEnv
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _smooth_noise(num_traj: int, traj_len: int, scale: float,
+                   rng: np.random.Generator) -> np.ndarray:
+    """Low-frequency Gaussian noise, tapered to zero at endpoints."""
+    raw = rng.normal(0.0, 1.0, size=(num_traj, traj_len, 2)).astype(np.float32)
+    kernel_size = max(3, traj_len // 8)
+    k = np.exp(-np.linspace(-2, 2, kernel_size) ** 2)
+    k /= k.sum()
+    out = np.empty_like(raw)
+    for n in range(num_traj):
+        for d in range(2):
+            out[n, :, d] = np.convolve(raw[n, :, d], k, mode="same")
+    out /= max(out.std(), 1e-6)
+    out *= scale
+    taper = np.minimum(np.arange(traj_len), np.arange(traj_len)[::-1])
+    taper = np.minimum(taper / max(traj_len // 8, 1), 1.0).astype(np.float32)
+    out *= taper[None, :, None]
+    return out
+
+
+def _box_violation_np(pts: torch.Tensor, cx: float, cy: float,
+                       hw: float, hh: float) -> torch.Tensor:
+    dx = pts[..., 0] - cx
+    dy = pts[..., 1] - cy
+    inside_dist = torch.minimum(hw - dx.abs(), hh - dy.abs())
+    return F.relu(inside_dist)
+
+
+# ---------------------------------------------------------------------------
+# Batched trajectory optimisation
+# ---------------------------------------------------------------------------
+
+
+def optimize_trajectories(env: SquareObstacleEnv, *,
+                           num_traj: int,
+                           traj_len: int,
+                           clearance: float = 0.03,
+                           num_iters: int = 600,
+                           lr: float = 0.01,
+                           w_obs: float = 5000.0,
+                           w_smooth: float = 5000.0,
+                           init_perturb: float = 0.10,
+                           arc_swing_max: float = 0.0,
+                           seed: int = 0,
+                           device: torch.device | str = "cpu",
+                           verbose: bool = False
+                           ) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run batched trajectory optimisation; returns (trajs, final_obs_cost).
+
+    Diversity comes from two sources:
+
+      * ``arc_swing_max``: per-demo lateral excursion. The init is a quadratic
+        Bezier (start, control, goal) where the control point's x is sampled
+        uniformly in [-arc_swing_max, +arc_swing_max] and its y is the
+        midpoint. So setting ``arc_swing_max=0`` recovers a straight-line
+        init; larger values produce demos that swing far left or right.
+
+      * ``init_perturb``: low-frequency Gaussian noise tapered to zero at the
+        endpoints, on top of the Bezier init.
+    """
+    rng = np.random.default_rng(seed)
+    start = np.array(env.start, dtype=np.float32)
+    goal = np.array(env.goal, dtype=np.float32)
+
+    # Per-demo Bezier control point — wide swing range -> wide demos.
+    mid_y = 0.5 * (start[1] + goal[1])
+    if arc_swing_max > 0:
+        ctrl_x = rng.uniform(-arc_swing_max, +arc_swing_max,
+                              size=num_traj).astype(np.float32)
+    else:
+        ctrl_x = np.zeros(num_traj, dtype=np.float32)
+    # Small y-jitter on the control point so two demos with the same swing
+    # don't trace identical arcs.
+    ctrl_y = (mid_y + rng.uniform(-0.05, 0.05,
+                                    size=num_traj).astype(np.float32))
+    ctrls = np.stack([ctrl_x, ctrl_y], axis=-1)        # (N, 2)
+
+    s = np.linspace(0.0, 1.0, traj_len, dtype=np.float32)[None, :, None]
+    init = ((1 - s) ** 2 * start[None, None, :]
+            + 2 * (1 - s) * s * ctrls[:, None, :]
+            + s ** 2 * goal[None, None, :])
+    init = init + _smooth_noise(num_traj, traj_len, init_perturb, rng)
+
+    traj = torch.tensor(init, device=device, requires_grad=True)
+    start_t = torch.tensor(start, device=device)
+    goal_t = torch.tensor(goal, device=device)
+
+    box = env.training_box
+    hw = box.half_w + clearance
+    hh = box.half_h + clearance
+
+    optim = torch.optim.Adam([traj], lr=lr)
+
+    for it in range(num_iters):
+        with torch.no_grad():
+            traj[:, 0, :] = start_t
+            traj[:, -1, :] = goal_t
+
+        viol = _box_violation_np(traj, box.cx, box.cy, hw, hh)   # (N, T)
+        obs_cost = (viol ** 2).sum(dim=-1)                       # (N,)
+
+        accel = traj[:, 2:] - 2 * traj[:, 1:-1] + traj[:, :-2]
+        smooth_cost = (accel ** 2).sum(dim=(1, 2))
+
+        loss = (w_obs * obs_cost + w_smooth * smooth_cost).mean()
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+
+        if verbose and (it % max(num_iters // 10, 1) == 0 or it == num_iters - 1):
+            with torch.no_grad():
+                in_coll = (viol > 1e-6).any(dim=-1).float().mean().item()
+                print(f"  [opt] it={it:4d} loss={loss.item():.4f} "
+                      f"obs_mean={obs_cost.mean().item():.3e} "
+                      f"smooth_mean={smooth_cost.mean().item():.3e} "
+                      f"frac_in_collision={in_coll:.3f}")
+
+    with torch.no_grad():
+        traj[:, 0, :] = start_t
+        traj[:, -1, :] = goal_t
+        viol = _box_violation_np(traj, box.cx, box.cy, hw, hh)
+        final_obs_cost = (viol ** 2).sum(dim=-1)
+
+    return traj.detach(), final_obs_cost
+
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+
+
+def _resample_to_len(traj: np.ndarray, num_points: int) -> np.ndarray:
+    if len(traj) == num_points:
+        return traj.astype(np.float32)
+    seg = np.linalg.norm(np.diff(traj, axis=0), axis=1)
+    arc = np.concatenate([[0.0], np.cumsum(seg)])
+    total = float(arc[-1])
+    if total <= 0:
+        return np.tile(traj[0], (num_points, 1)).astype(np.float32)
+    arc_n = arc / total
+    s = np.linspace(0.0, 1.0, num_points)
+    fx = interp1d(arc_n, traj[:, 0], kind="cubic")
+    fy = interp1d(arc_n, traj[:, 1], kind="cubic")
+    return np.stack([fx(s), fy(s)], axis=1).astype(np.float32)
+
+
+@dataclass
+class _DatasetMeta:
+    num_demos: int
+    base_traj_len: int
+    final_obs_cost_mean: float
+
+
+class SquareObstacleTrajectoryDataset(Dataset):
+    """Pre-computed demos avoiding the training square."""
+
+    def __init__(self,
+                 env: SquareObstacleEnv,
+                 num_demos: int = 4096,
+                 trajs_per_demo: int = 4,
+                 traj_lens: Sequence[int] = (32, 48, 64, 80, 96),
+                 base_traj_len: int = 96,
+                 clearance: float = 0.03,
+                 opt_iters: int = 600,
+                 opt_lr: float = 0.01,
+                 w_obs: float = 5000.0,
+                 w_smooth: float = 5000.0,
+                 init_perturb: float = 0.10,
+                 arc_swing_max: float = 0.0,
+                 cost_filter_quantile: float = 0.95,
+                 device: str = "cuda",
+                 seed: int = 0,
+                 cache_path: str | None = None,
+                 verbose: bool = True):
+        super().__init__()
+        self.env = env
+        self.trajs_per_demo = trajs_per_demo
+        self.traj_lens = list(traj_lens)
+        self.base_traj_len = base_traj_len
+        self.seed = seed
+
+        if cache_path is not None and os.path.exists(cache_path):
+            data = np.load(cache_path)
+            self.demos = data["demos"].astype(np.float32)
+            self.meta = _DatasetMeta(
+                num_demos=int(self.demos.shape[0]),
+                base_traj_len=int(self.demos.shape[1]),
+                final_obs_cost_mean=float(data["mean_cost"]),
+            )
+            if verbose:
+                print(f"[data] loaded {self.meta.num_demos} demos from {cache_path}")
+        else:
+            dev = torch.device(device if torch.cuda.is_available() else "cpu")
+            if verbose:
+                print(f"[data] running batched trajectory optimisation: "
+                      f"N={num_demos} T={base_traj_len} on {dev}")
+            traj, cost = optimize_trajectories(
+                env,
+                num_traj=num_demos,
+                traj_len=base_traj_len,
+                clearance=clearance,
+                num_iters=opt_iters,
+                lr=opt_lr,
+                w_obs=w_obs,
+                w_smooth=w_smooth,
+                init_perturb=init_perturb,
+                arc_swing_max=arc_swing_max,
+                seed=seed,
+                device=dev,
+                verbose=verbose,
+            )
+            traj_np = traj.cpu().numpy()
+            cost_np = cost.cpu().numpy()
+            if cost_filter_quantile < 1.0:
+                thresh = float(np.quantile(cost_np, cost_filter_quantile))
+                keep = cost_np <= thresh
+                traj_np = traj_np[keep]
+                cost_np = cost_np[keep]
+                if verbose:
+                    print(f"[data] kept {len(traj_np)}/{num_demos} demos "
+                          f"after cost filter <= {thresh:.4g}")
+            self.demos = traj_np
+            self.meta = _DatasetMeta(
+                num_demos=int(traj_np.shape[0]),
+                base_traj_len=int(traj_np.shape[1]),
+                final_obs_cost_mean=float(cost_np.mean()),
+            )
+            if cache_path is not None:
+                Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
+                np.savez_compressed(cache_path, demos=traj_np,
+                                     mean_cost=self.meta.final_obs_cost_mean)
+                if verbose:
+                    print(f"[data] cached -> {cache_path}")
+
+    def __len__(self):
+        return len(self.demos) * self.trajs_per_demo
+
+    def __getitem__(self, idx):
+        demo_idx = idx % len(self.demos)
+        rng = np.random.default_rng(self.seed * 1_000_003 + idx)
+        traj_len = int(rng.choice(self.traj_lens))
+        traj = _resample_to_len(self.demos[demo_idx], traj_len)
+        return {
+            "traj": torch.from_numpy(traj),
+            "traj_len": traj_len,
+        }
+
+
+def collate_fixed_len(batch: list[dict]) -> dict:
+    return {
+        "traj": torch.stack([b["traj"] for b in batch]),
+        "traj_len": batch[0]["traj_len"],
+    }
+
+
+class LengthBucketBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, dataset: SquareObstacleTrajectoryDataset,
+                 batch_size: int, shuffle: bool = True, seed: int = 0):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.seed = seed
+        self.buckets: dict[int, list[int]] = {L: [] for L in dataset.traj_lens}
+        for i in range(len(dataset)):
+            rng = np.random.default_rng(dataset.seed * 1_000_003 + i)
+            L = int(rng.choice(dataset.traj_lens))
+            self.buckets[L].append(i)
+
+    def __iter__(self):
+        rng = np.random.default_rng(self.seed)
+        all_batches: list[list[int]] = []
+        for L, idxs in self.buckets.items():
+            order = list(idxs)
+            if self.shuffle:
+                rng.shuffle(order)
+            for i in range(0, len(order), self.batch_size):
+                batch = order[i:i + self.batch_size]
+                if len(batch) == self.batch_size:
+                    all_batches.append(batch)
+        if self.shuffle:
+            rng.shuffle(all_batches)
+        for b in all_batches:
+            yield b
+
+    def __len__(self):
+        return sum(len(v) // self.batch_size for v in self.buckets.values())
+
+
+# ---------------------------------------------------------------------------
+# CLI: plot a few demos
+# ---------------------------------------------------------------------------
+
+
+def _main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scenario", type=str, default="inverted_c",
+                         choices=["none", "square", "inverted_u", "inverted_c"])
+    parser.add_argument("--num_demos", type=int, default=512)
+    parser.add_argument("--plot_samples", type=int, default=16)
+    parser.add_argument("--traj_len", type=int, default=64)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--arc_swing_max", type=float, default=0.6,
+                         help="max per-demo lateral arc swing (Bezier ctrl-pt)")
+    parser.add_argument("--w_smooth", type=float, default=1500.0,
+                         help="smoothness penalty weight in traj-opt")
+    parser.add_argument("--init_perturb", type=float, default=0.10)
+    parser.add_argument("--out", type=str,
+                        default="src/ToyExamples/square_obstacle_2d/results/dataset_sanity.png")
+    args = parser.parse_args()
+
+    env = SquareObstacleEnv(scenario=args.scenario)
+    ds = SquareObstacleTrajectoryDataset(
+        env=env,
+        num_demos=args.num_demos,
+        trajs_per_demo=4,
+        traj_lens=[args.traj_len],
+        arc_swing_max=args.arc_swing_max,
+        w_smooth=args.w_smooth,
+        init_perturb=args.init_perturb,
+        device=args.device,
+    )
+    print(f"[dataset] {ds.meta.num_demos} demos, {len(ds)} total samples, "
+          f"mean obstacle-cost={ds.meta.final_obs_cost_mean:.4g}")
+
+    from . import viz
+
+    rng = np.random.default_rng(0)
+    indices = rng.choice(len(ds), size=args.plot_samples, replace=False)
+    sample_trajs = np.stack([ds[int(i)]["traj"].numpy() for i in indices])
+
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    viz.plot_panels(
+        env=env,
+        panels=[("Demonstrations (training data)", sample_trajs)],
+        out_path=args.out,
+        suptitle=f"square_obstacle_2d / scenario={args.scenario}",
+        # Demos avoid only the square — show that for context.
+        show_training_obstacle=True,
+        show_constraints=True,
+    )
+    print(f"[dataset] wrote {args.out}")
+
+
+if __name__ == "__main__":
+    _main()

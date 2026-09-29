@@ -1,0 +1,16 @@
+name: triangle_obstacles_2d
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch
+      - torchvision
+      - numpy
+      - scipy
+      - matplotlib
+      - tqdm
+      - einops
+      - omegaconf

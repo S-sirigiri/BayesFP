@@ -1,0 +1,78 @@
+# Default config for the 2D triangle-obstacles toy example.
+# Reproduces Figure 11 (Avoiding-Cluttered) of the JM2D paper using FKC.
+
+seed: 0
+device: cuda
+
+data:
+  # Demonstration generation via batched trajectory optimisation.
+  num_demos: 4096            # large pool; the user asked for "quite a lot"
+  trajs_per_demo: 4          # additional length-resampling diversity per demo
+  traj_lens: [32, 48, 64, 80, 96]
+  base_traj_len: 96          # length used during the optimisation pass
+  clearance: 0.04            # safety margin around each obstacle disk
+  # Trajectory-optimisation hyperparameters
+  opt_iters: 600
+  opt_lr: 0.01
+  w_obs: 5000.0
+  w_smooth: 5000.0
+  init_perturb: 0.08
+  cost_filter_quantile: 0.95 # discard top-5% noisiest demos by final obs cost
+  cache_path: src/ToyExamples/triangle_obstacles_2d/data_cache/demos.npz
+
+model:
+  base_ch: 96
+  channel_mult: [1, 2, 4]
+  cond_dim: 256
+  t_emb_dim: 128
+
+diffusion:
+  num_steps: 100
+  schedule: cosine
+
+train:
+  epochs: 250
+  batch_size: 128
+  lr: 2.0e-4
+  weight_decay: 0.0
+  ema_decay: 0.999
+  log_every: 50
+  ckpt_every_epochs: 25
+  ckpt_dir: src/ToyExamples/triangle_obstacles_2d/checkpoints
+  num_workers: 2
+  amp: true
+
+infer:
+  traj_len: 64
+  num_samples: 16
+  out_dir: src/ToyExamples/triangle_obstacles_2d/results
+
+# Plot titles for the inference output. ``suptitle`` supports the
+# ``{scenario}`` placeholder, which is filled in with whatever ``--scenario``
+# is passed to ``infer.py``. ``panel_titles`` lets you rename each of the
+# three subplots independently. Comment any key out to fall back to its
+# hard-coded default.
+viz:
+  suptitle: "Path planing through cluttered enviroment."
+  panel_titles:
+    vanilla:      "No guidance"
+    linear_combo: "Linear combination"
+    fkc:          "BayesFP (Ours)"
+  # Font sizes (points). ``font_size`` is the base for all text (ticks,
+  # default text). The two overrides take precedence on the titles when set;
+  # leave them out to fall back to font_size and font_size+1.
+  font_size: 17
+  panel_title_size: 20
+  suptitle_size: 23
+
+# Inference-time guidance hyperparameters (ported from maze_fkc/v2).
+fkc:
+  guidance_weight: 200.0
+  beta_anneal: true
+  beta_pow: 3.0
+  num_particles: 128
+  resample_ess_frac: 0.5
+  weight_mode: girsanov   # 'energy' or 'girsanov'
+  active_window: [0.3, 0.95]
+  clearance: 0.0
+  return_best: true

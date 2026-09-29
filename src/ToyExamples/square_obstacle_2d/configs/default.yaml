@@ -1,0 +1,82 @@
+# Default config for the square / inverted-U toy example.
+
+seed: 0
+device: cuda
+
+data:
+  num_demos: 8192              # bigger pool now that demos cover a wider arc
+  trajs_per_demo: 4
+  traj_lens: [32, 48, 64, 80, 96]
+  base_traj_len: 96
+  clearance: 0.03
+  opt_iters: 600
+  opt_lr: 0.01
+  w_obs: 5000.0
+  w_smooth: 1500.0             # lowered so wider arcs survive optimisation
+  init_perturb: 0.10
+  # Per-demo lateral arc swing: control point's x is sampled uniformly in
+  # [-arc_swing_max, +arc_swing_max]. ~0 -> straight-line demos; large -> wide
+  # arcs that swing far around the square. Mixing the two gives the model a
+  # support that stretches well beyond the small training square, so FKC /
+  # linear_combo can find feasible routes around wide constraints (the
+  # inverted-U or inverted-C) without going badly out-of-distribution.
+  arc_swing_max: 0.6
+  cost_filter_quantile: 0.95
+  cache_path: src/ToyExamples/square_obstacle_2d/data_cache/demos_wide.npz
+
+model:
+  base_ch: 96
+  channel_mult: [1, 2, 4]
+  cond_dim: 256
+  t_emb_dim: 128
+
+diffusion:
+  num_steps: 100
+  schedule: cosine
+
+train:
+  epochs: 250
+  batch_size: 128
+  lr: 2.0e-4
+  weight_decay: 0.0
+  ema_decay: 0.999
+  log_every: 50
+  ckpt_every_epochs: 25
+  ckpt_dir: src/ToyExamples/square_obstacle_2d/checkpoints
+  num_workers: 2
+  amp: true
+
+infer:
+  traj_len: 64
+  num_samples: 16
+  out_dir: src/ToyExamples/square_obstacle_2d/results
+
+# Plot titles for the inference output. ``suptitle`` supports the
+# ``{scenario}`` placeholder. ``panel_titles`` lets you rename each subplot.
+viz:
+  suptitle: "Planning around non-convex obstacles."
+  panel_titles:
+    vanilla:      "No guidance"
+    linear_combo: "Linear combination"
+    fkc:          "BayesFP (Ours)"
+  # Font sizes (points). ``font_size`` is the base; the two overrides take
+  # precedence on the titles when set, otherwise default to font_size and
+  # font_size+1.
+  font_size: 17
+  panel_title_size: 20
+  suptitle_size: 23
+
+# The inverted-U is much wider than the training square, so the trajectory
+# has to make a much larger lateral detour than anything seen in the demos.
+# Bumped guidance_weight a bit relative to triangle_obstacles_2d to push
+# samples further out-of-distribution when needed.
+fkc:
+  guidance_weight: 0.7
+  beta_anneal: false
+  beta_pow: 3.0
+  num_particles: 128
+  resample_ess_frac: 0.5
+  weight_mode: girsanov
+  active_window: [0.3, 0.95]
+  clearance: 0.0
+  return_best: true

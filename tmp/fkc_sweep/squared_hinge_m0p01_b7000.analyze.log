@@ -1,0 +1,18 @@
+Found 1 collision-log file(s).
+
+=== FruitsGreenLimesOnPlateTask/collisions_run_0.npz ===
+  obstacles: ['table', 'lemon_01', 'lemon_02', 'lime01', 'lime01_01', 'orange_01', 'orange_02', 'pomegranate01', 'pumpkinlarge', 'pumpkinsmall', 'redonion', 'serving_bowl', 'clay_plates', 'wooden_spoons', 'spatula', 'storage_box']
+  body_radius=0.045 m, obstacle_pad=0.000 m, records=5246
+  env 0:  445 / 1349 steps ( 33.0%)  min_clearance= -45.00 mm  mean= +56.43 mm
+  env 1:  642 / 1199 steps ( 53.5%)  min_clearance= -45.00 mm  mean= +19.20 mm
+  env 2:  813 / 1349 steps ( 60.3%)  min_clearance= -45.00 mm  mean=  +3.51 mm
+  env 3:   30 / 1349 steps (  2.2%)  min_clearance= -21.71 mm  mean= +51.74 mm
+  top offending bodies (steps in collision):
+    panda_link6                              1853
+    panda_link5                              1853
+    right_inner_finger                       1802
+    left_inner_finger                        1798
+    base_link                                1786
+
+=== overall ===
+  1930 / 5246 steps in collision ( 36.8%)  min_clearance= -45.00 mm

@@ -1,0 +1,12 @@
+[submodule "src/RoboLab"]
+	path = src/RoboLab
+	url = git@github.com:S-sirigiri/RoboLab.git
+[submodule "src/diffusion_policy"]
+	path = src/diffusion_policy
+	url = git@github.com:S-sirigiri/diffusion-policy.git
+[submodule "src/Isaac-GR00T"]
+	path = src/Isaac-GR00T
+	url = git@github.com:S-sirigiri/Isaac-GR00T.git
+[submodule "src/openpi"]
+	path = src/openpi
+	url = https://github.com/S-sirigiri/openpi.git

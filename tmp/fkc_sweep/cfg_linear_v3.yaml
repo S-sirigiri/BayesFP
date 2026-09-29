@@ -1,0 +1,50 @@
+# Linear hinge with much softer guidance — let the gripper approach the plate.
+mode: fkc
+
+num_steps: null
+num_particles: 4
+particles_parallel: true
+parallel_nn_and_cost: true
+
+w_cost_value: 0.0
+w_eq_value:   0.0
+w_ineq_value: 2.0
+w_cost_grad:  0.0
+w_eq_grad:    0.0
+w_ineq_grad:  0.2
+
+beta_schedule: constant
+beta_strength: 2.0e3
+
+sigma_schedule: zero_ends
+sigma_scale: 0.25
+
+resample_interval: 1
+resample_t_min: 0.05
+resample_t_max: 0.95
+center_log_weight_increment: true
+
+fk:
+  robot: franka_panda
+  base_xyz: [0.0, 0.0, 0.0]
+  base_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+  ee_offset_xyz: [0.0, 0.0, 0.01817]
+  ee_offset_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+collision:
+  mode: ee_plus_arm
+  penalty_type: linear
+  safety_margin: 0.02
+  arm_sample_points: 8
+  full_body_points: 30
+  softplus_beta: 50.0
+
+dynamics:
+  enabled: true
+  stiffness: 400.0
+  damping: 80.0
+  sim_dt: 0.008333333333333333
+  decimation: 8
+
+cost:
+  target_xyz: [0.55, 0.0, 0.25]
