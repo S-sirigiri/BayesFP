@@ -86,7 +86,8 @@ def constraint_cost(traj: torch.Tensor, env: TriangleObstacleEnv,
     the violation boundary outward by that margin.
     """
     if not env.inference_constraints:
-        return traj.new_zeros(traj.shape[0])
+        # Keep the zero cost connected to traj so autograd returns zero gradients.
+        return traj.sum(dim=(-2, -1)) * 0.0
     cost = traj.new_zeros(traj.shape[0])
     for region in env.inference_constraints:
         v = _region_violation(traj, region)               # (B, T)

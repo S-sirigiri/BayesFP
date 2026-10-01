@@ -15,6 +15,6 @@ python -m src.ToyExamples.square_obstacle_2d.infer --scenario inverted_u --num_s
 
 Training generates demonstrations and writes this example's `checkpoints/latest.pt`. Inference writes PNG/PDF comparisons under `results/` and prints waypoint collision/violation rates and endpoint goal success. It compares vanilla DDPM, linear-combination guidance, and FKC.
 
-The `square` scenario uses the training square as an inference constraint. The parser also accepts `none`, but guided inference currently fails on its constant zero cost; see the [usage guide](../../../docs/getting-started.md).
+The `square` scenario uses the training square as an inference constraint. Use `--scenario none` to disable inference constraints for all three samplers; see the [usage guide](../../../docs/getting-started.md).
 
 See the [project README](../../../README.md) and [configuration/API reference](../../../docs/reference.md) for shared setup and sampler details.

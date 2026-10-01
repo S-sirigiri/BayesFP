@@ -22,7 +22,7 @@ Both examples expose `data`, `train`, and `infer` modules. Use `python -m src.To
 | `--out PATH` | Figure path; PNG and PDF share its stem |
 | `--seed N` | NumPy and PyTorch inference seed; default 0 |
 
-The square `none` scenario is parser-supported but currently incompatible with cost-gradient computation; see [troubleshooting](getting-started.md#square-and-non-convex-obstacles).
+The square `none` scenario is supported: its cost and gradient are both zero.
 
 ## YAML settings
 
@@ -91,6 +91,6 @@ Diagnostics contain `resample_steps`, `ess_log`, and `weight_log`. With `return_
 
 ## Extending the toys
 
-Add geometry and scenario construction in `env.py`, analytical penalties in `cost.py`, and rendering in `viz.py`. Keep costs batched and differentiable with respect to trajectories. A cost with no differentiable dependence on its input needs special handling before calling `torch.autograd.grad`.
+Add geometry and scenario construction in `env.py`, analytical penalties in `cost.py`, and rendering in `viz.py`. Keep costs batched and differentiable with respect to trajectories. For an empty constraint set, return a differentiable zero (as the supplied costs do) so `torch.autograd.grad` yields zero gradients.
 
 Training obstacles and inference constraints are separate. A new inference constraint can reuse the prior; changes to training geometry require a new demonstration cache and retraining. For a new policy family, use its submodule's model interface and normalization conventions rather than assuming the toy `(T, 2)` representation applies.

@@ -57,7 +57,7 @@ python -m src.ToyExamples.square_obstacle_2d.infer \
   --scenario inverted_u --num_samples 16
 ```
 
-`inverted_c` is the inference default and uses an upper-half annulus. `inverted_u` uses boxes. `square` reuses the training obstacle as a constraint. Although `none` is accepted by the parser, the guided samplers currently fail when differentiating its constant zero cost; use `sample_vanilla` directly for a constraint-free comparison.
+`inverted_c` is the inference default and uses an upper-half annulus. `inverted_u` uses boxes. `square` reuses the training obstacle as a constraint. `none` disables inference constraints; all three samplers then run with zero cost guidance.
 
 ## Outputs and checkpoints
 

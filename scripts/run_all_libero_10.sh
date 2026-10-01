@@ -1,8 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PYTHON_BIN="gr00t/eval/sim/LIBERO/libero_uv/.venv/bin/python"
-ROLLOUT_SCRIPT="gr00t/eval/rollout_policy.py"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+GR00T_ROOT="${GR00T_ROOT:-$SCRIPT_DIR/../src/Isaac-GR00T}"
+PYTHON_BIN="${PYTHON_BIN:-$GR00T_ROOT/gr00t/eval/sim/LIBERO/libero_uv/.venv/bin/python}"
+ROLLOUT_SCRIPT="$GR00T_ROOT/gr00t/eval/rollout_policy.py"
+POLICY_CLIENT_HOST="${POLICY_CLIENT_HOST:-127.0.0.1}"
+POLICY_CLIENT_PORT="${POLICY_CLIENT_PORT:-5555}"
+
+if [[ ! -f "$ROLLOUT_SCRIPT" ]]; then
+  echo "Missing GR00T rollout script: $ROLLOUT_SCRIPT" >&2
+  echo "Initialize src/Isaac-GR00T, or set GR00T_ROOT to a complete checkout." >&2
+  exit 1
+fi
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "Missing LIBERO Python environment: $PYTHON_BIN" >&2
+  echo "Follow docs/integrations.md to set up LIBERO, or set PYTHON_BIN to its Python executable." >&2
+  exit 1
+fi
+
+# Resolve paths before changing directory, including caller-supplied relative paths.
+PYTHON_BIN="$(command -v "$PYTHON_BIN")"
+PYTHON_BIN="$(cd -- "$(dirname -- "$PYTHON_BIN")" && pwd)/$(basename -- "$PYTHON_BIN")"
+cd -- "$GR00T_ROOT"
+ROLLOUT_SCRIPT="$PWD/gr00t/eval/rollout_policy.py"
 
 TASKS=(
   "libero_sim/LIVING_ROOM_SCENE2_put_both_the_alphabet_soup_and_the_tomato_sauce_in_the_basket"
@@ -24,8 +45,8 @@ for ENV_NAME in "${TASKS[@]}"; do
 
   "$PYTHON_BIN" "$ROLLOUT_SCRIPT" \
     --n_episodes 10 \
-    --policy_client_host 127.0.0.1 \
-    --policy_client_port 5555 \
+    --policy_client_host "$POLICY_CLIENT_HOST" \
+    --policy_client_port "$POLICY_CLIENT_PORT" \
     --max_episode_steps 720 \
     --env_name "$ENV_NAME" \
     --n_action_steps 8 \
