@@ -1,20 +1,56 @@
-# Square obstacles: non-convex 2D planning
+# square_obstacle_2d
 
-A self-contained BayesFP toy example trained on demonstrations around a small square. Start and goal are fixed and enforced during sampling. Inference can replace the constraint with an upper-half annulus (`inverted_c`, the default) or a box-based inverted U (`inverted_u`).
+Second toy example: vertical 2D path planning from a fixed **start** to a
+fixed **goal** point directly above. The diffusion model is trained on
+demonstrations that detour around a small **square** at the midpoint. At
+inference time the square is replaced by a much wider **inverted-U** as
+the FKC / linear_combo constraint, forcing samples to take a much larger
+lateral detour than anything seen during training.
 
-Use the shared `triangle_obstacles_2d` Conda environment. From the repository root:
+Uses the same conda env as `triangle_obstacles_2d` (`triangle_obstacles_2d`).
+
+## 1. Sanity-check the dataset
 
 ```bash
-conda env create -f src/ToyExamples/triangle_obstacles_2d/environment.yml
-conda activate triangle_obstacles_2d
-python -m src.ToyExamples.square_obstacle_2d.data --num_demos 256 --plot_samples 16 --device cpu
-python -m src.ToyExamples.square_obstacle_2d.train
-python -m src.ToyExamples.square_obstacle_2d.infer --scenario inverted_c --num_samples 16
-python -m src.ToyExamples.square_obstacle_2d.infer --scenario inverted_u --num_samples 16
+python -m src.ToyExamples.square_obstacle_2d.data --num_demos 256 --plot_samples 16
 ```
 
-Training generates demonstrations and writes this example's `checkpoints/latest.pt`. Inference writes PNG/PDF comparisons under `results/` and prints waypoint collision/violation rates and endpoint goal success. It compares vanilla DDPM, linear-combination guidance, and FKC.
+Writes `results/dataset_sanity.png`. Demos go from start (black square) to
+goal (green star) and detour around the small red square at the centre.
 
-The `square` scenario uses the training square as an inference constraint. Use `--scenario none` to disable inference constraints for all three samplers; see the [usage guide](../../../docs/getting-started.md).
+## 2. Train
 
-See the [project README](../../../README.md) and [configuration/API reference](../../../docs/reference.md) for shared setup and sampler details.
+```bash
+python -m src.ToyExamples.square_obstacle_2d.train
+```
+
+First time: runs ~4096 batched trajectory optimisations, then trains a
+~22M-parameter unconditional 1D U-Net for 250 epochs (~10 min on GPU).
+
+## 3. Run inference (replace square with inverted-U)
+
+```bash
+python -m src.ToyExamples.square_obstacle_2d.infer --num_samples 16
+```
+
+Writes `results/inverted_u.png` with three panels (vanilla, linear_combo,
+fkc) and prints metrics (`square_collision_rate`, `constraint_violation_rate`,
+`goal_reach_rate`).
+
+## Layout
+
+```
+src/ToyExamples/square_obstacle_2d/
+├── env.py            # BoxRegion + SquareObstacleEnv (square, inverted-U)
+├── cost.py           # analytical box-violation cost
+├── data.py           # batched-traj-opt demo generator
+├── model.py          # unconditional 1D UNet
+├── diffusion.py      # cosine-schedule DDPM
+├── samplers.py       # vanilla / linear_combo / fkc (start+goal inpainting)
+├── viz.py            # square + inverted-U + start/goal markers
+├── train.py
+├── infer.py
+├── configs/default.yaml
+├── checkpoints/      # populated by train.py
+└── results/          # populated by data.py / infer.py
+```
