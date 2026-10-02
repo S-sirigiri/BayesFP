@@ -1,3 +1,4 @@
+/tmp/
 src/diffusion_policy/data
 test_examples/.venv/
 src/Isaac-GR00T/external_dependencies/GR00T-WholeBodyControl/gr00t_wbc/control/robot_model/model_data/g1/meshes/head_link.STL
@@ -365,4 +366,3 @@ src/Isaac-GR00T/media/banner.gif
 src/Isaac-GR00T/media/stacked_demo.gif
 src/Isaac-GR00T/media/unitree_g1.gif
 src/Isaac-GR00T/media/yam.gif
-
