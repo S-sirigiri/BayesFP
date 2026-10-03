@@ -1,8 +1,8 @@
 # BayesFP
 
-Code accompanying **BayesFP: Posterior Estimation for Flow-Based Policies via Feynman-Kac Sampling**, by Sreevardhan Sirigiri, Weiming Zhi, and Fabio Ramos.
+Code accompanying [**BayesFP: Posterior Estimation for Flow-Based Policies via Feynman-Kac Sampling**](https://arxiv.org/abs/2606.21014), by Sreevardhan Sirigiri, Weiming Zhi, and Fabio Ramos.
 
-BayesFP adds inference-time costs and constraints to pretrained diffusion and flow-matching policies without retraining the base policy. It treats the policy as a prior and uses Feynman-Kac weighted sampling to favor trajectories with lower cost. In the code, the method is usually called `fkc` (Feynman-Kac corrector).
+[BayesFP](https://arxiv.org/abs/2606.21014) adds inference-time costs and constraints to pretrained diffusion and flow-matching policies without retraining the base policy. It treats the policy as a prior and uses Feynman-Kac weighted sampling to favor trajectories with lower cost. In the code, the method is usually called `fkc` (Feynman-Kac corrector).
 
 ![No guidance, linear-combination guidance, and BayesFP on the cluttered 2D toy problem](src/ToyExamples/triangle_obstacles_2d/results/cluttered.png)
 
