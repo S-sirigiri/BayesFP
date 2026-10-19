@@ -80,10 +80,14 @@ For the robotic experiments, the paper uses 32 particles for Diffusion Policy, 8
 If you use this code in your research, please cite the accompanying manuscript. This entry records the manuscript metadata; use the final publication entry when available.
 
 ```bibtex
-@misc{sirigiri2026bayesfp,
-  title  = {BayesFP: Posterior Estimation for Flow-Based Policies via Feynman-Kac Sampling},
-  author = {Sirigiri, Sreevardhan and Zhi, Weiming and Ramos, Fabio},
-  year   = {2026}
+@misc{sirigiri2026bayesfpposteriorestimationflowbased,
+      title={BayesFP: Posterior Estimation for Flow-Based Policies via Feynman-Kac Sampling}, 
+      author={Sreevardhan Sirigiri and Weiming Zhi and Fabio Ramos},
+      year={2026},
+      eprint={2606.21014},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2606.21014}, 
 }
 ```
 
